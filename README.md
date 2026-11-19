@@ -9,7 +9,7 @@ Nomad intercepts every Eloquent model as it loads from the database and converts
 1. Your database stores all datetimes in UTC (the Laravel default).
 2. Nomad detects the user's timezone from: HTTP header, session, authenticated user's DB column, GeoIP, or config fallback.
 3. When a model is retrieved, Nomad dynamically applies a custom Eloquent cast to every datetime column, converting UTC to the user's timezone.
-4. When you save a model, the cast converts any timezone-aware Carbon instance back to UTC before writing to the database.
+4. When you save a model, the cast converts any timezone-aware Carbon instance back to UTC before writing to the database. So does ISO 8601 text that names its timezone, such as `2026-11-19T07:27:21.188Z` from a JSON API.
 
 You read in local time. You write in UTC. Automatically.
 
@@ -108,6 +108,13 @@ $post->created_at->timezone; // Africa/Lagos
 // Saving converts back to UTC automatically
 $post->published_at = now(); // Carbon instance in any timezone
 $post->save();               // Stored as UTC in the database
+
+// ISO 8601 text with a timezone is converted to UTC too
+$post->published_at = '2024-06-15T11:00:00+01:00';
+$post->save();               // Stored as 2024-06-15 10:00:00
+
+// Text with no timezone is taken to be UTC already and stored as written
+$post->published_at = '2024-06-15 10:00:00';
 ```
 
 ### Excluding Models
@@ -217,7 +224,7 @@ return [
 
 Nomad uses three core components:
 
-**NomadDatetimeCast** - A Laravel custom cast (`CastsAttributes`). On `get()`: parses the raw UTC value and returns a Carbon instance in the user's timezone. On `set()`: converts any Carbon/DateTime instance back to a UTC string.
+**NomadDatetimeCast** - A Laravel custom cast (`CastsAttributes`). On `get()`: parses the raw UTC value and returns a Carbon instance in the user's timezone. On `set()`: converts any Carbon/DateTime instance, or ISO 8601 text with a `Z` or an offset (`+01:00`, `+0100`, `+01`), back to a UTC string. Other text is stored as written. An impossible date such as 30 February is left for the database to refuse, not rolled over into March.
 
 **NomadTimezoneObserver** - Listens to wildcard Eloquent events (`eloquent.retrieved: *` and `eloquent.created: *`). When any model is loaded, it discovers all datetime columns and dynamically applies `NomadDatetimeCast` via `$model->mergeCasts()`.
 
